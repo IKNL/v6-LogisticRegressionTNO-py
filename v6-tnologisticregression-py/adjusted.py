@@ -36,17 +36,28 @@ def parse_args():
 async def transfer(x=None, y=None):
 
     if x:
-        b = pd.read_csv(x, header=None).to_numpy().flatten().tolist()
-        print(f"This is b, {b}")
-        x = [secnum(xi, integral=False) for xi in b]
+        b = pd.read_csv(x, header=None).to_numpy()
+        if b.shape[1] ==1:
+            b = b.flatten().tolist()
+            print("single dim ")
+            print(f"This is b, {b}")
+            x = [secnum(xi, integral=False) for xi in b]
+        else:
+            b = b.tolist()
+            print("multi dim")
+            print(f"This is b: {b}")
+            x = [[secnum(x, integral=False) for x in row] for row in b]
+
         y = []
 
     if y:
         c = pd.read_csv(y, header=None).to_numpy().flatten().tolist()
         print(f"This is c, {c}")
         print(f"This is c, {type(c)}")
-
-        [print(yi) for yi in c]
+        if all(list(map(lambda x:x in c, (0,1)))):
+            c = [-1 if x==0 else 1 for x in c]
+        elif not all(list(map(lambda x:x in c, (-1,1)))):
+            raise ValueError("All values in the response must be {-1,1}")
         y = [secnum(yi, integral=False) for yi in c]
         x = []
 
