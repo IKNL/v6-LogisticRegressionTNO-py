@@ -9,29 +9,17 @@ here = path.abspath(path.dirname(__file__))
 with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
-# # read the API version from disk
-# with open(path.join(here, 'vantage6', 'tools', 'VERSION')) as fp:
-#     __version__ = fp.read()
-
 # setup the package
 setup(
-    name='v6logit',
+    name='v6-logistic-regression-py',
     version="1.0.0",
-    description='vantage6 logit',
+    description='vantage6 vertical logistic regression',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url='https://github.com/IKNL/v6_whatever-py',
+    url='https://github.com/IKNL/vantage6-algorithms',
     packages=find_packages(),
     python_requires='>=3.6',
     install_requires=[
-        # 'vantage6-client'
+        'vantage6-client'
     ]
-    # ,
-    # extras_require={
-    # },
-    # package_data={
-    #     'vantage6.tools': [
-    #         'VERSION'
-    #     ],
-    # }
 )

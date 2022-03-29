@@ -119,27 +119,19 @@ if __name__ == "__main__":
     print(f"this is parties, {parties}")
     print(f"this is the ports, {args.port}")
 
-    # from mpyc.runtime import mpc
+    # create our mpc runtime object
     mpc = setup(parties, args.port)
-    # import tno.mpc.mpyc.secure_learning.solvers
 
-    # tno.mpc.mpyc.secure_learning.solvers.mpc = mpc
-
-    # from mpyc.runtime import mpc
-    # import tno.mpc.mpyc.secure_learning.models.secure_model
-
-    # print(tno.mpc.mpyc.secure_learning.models.secure_model)
-
-    # tno.mpc.mpyc.secure_learning.models.secure_model.Model.mpc = mpc
-
+    # we need to feed this runtime object into all modules of TNO
     import mpyc.runtime
     mpyc.runtime.mpc = mpc
+
     import tno.mpc.mpyc.secure_learning.solvers.solver
     tno.mpc.mpyc.secure_learning.solvers.solver.mpc = mpc
 
     import tno.mpc.mpyc.secure_learning.solvers.gd_solver
     tno.mpc.mpyc.secure_learning.solvers.gd_solver.mpc = mpc
-# C:\tools\miniconda3\envs\logit\lib\site-packages\tno\mpc\mpyc\secure_learning\
+
     import tno.mpc.mpyc.secure_learning.regularizers
     tno.mpc.mpyc.secure_learning.regularizers.mpc = mpc
 
@@ -152,23 +144,13 @@ if __name__ == "__main__":
     import tno.mpc.mpyc.secure_learning.models.common_gradient_forms
     tno.mpc.mpyc.secure_learning.models.common_gradient_forms.mpc = mpc
 
-    import mpyc.asyncoro
-    mpyc.asyncoro.runtime = mpc
+    import tno.mpc.mpyc.stubs.asyncoro
+    tno.mpc.mpyc.stubs.asyncoro.runtime = mpc
 
-    # import tno.mpc.
-
-
-    # print(mpyc.asyncoro.runtime)
     mpc.run(mpc.start())
-
     if args.x_value:
-        print("running x")
-
         mpc.run(transfer(x=args.x_value))
     else:
-        print("running y    ")
-
         mpc.run(transfer(y=args.y_value))
-    mpc.run(mpc.shutdown())
 
-# from mpyc.runtime import mpc
+    mpc.run(mpc.shutdown())

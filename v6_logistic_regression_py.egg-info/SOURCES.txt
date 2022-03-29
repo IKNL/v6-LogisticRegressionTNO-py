@@ -1,0 +1,15 @@
+README.md
+setup.py
+v6-logistic-regression-py/__init__.py
+v6-logistic-regression-py/adjusted.py
+v6-logistic-regression-py/example.py
+v6-logistic-regression-py/example_usage.py
+v6-logistic-regression-py/mpc.py
+v6-logistic-regression-py/patcher.py
+v6-logistic-regression-py/run.py
+v6-logistic-regression-py/thomtno.py
+v6_logistic_regression_py.egg-info/PKG-INFO
+v6_logistic_regression_py.egg-info/SOURCES.txt
+v6_logistic_regression_py.egg-info/dependency_links.txt
+v6_logistic_regression_py.egg-info/requires.txt
+v6_logistic_regression_py.egg-info/top_level.txt
