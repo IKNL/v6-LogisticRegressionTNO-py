@@ -1,3 +1,4 @@
+from audioop import add
 import pandas
 import numpy
 
@@ -16,8 +17,8 @@ from tno.mpc.encryption_schemes.utils import FixedPoint
 from tno.mpc.protocols.secure_inner_join import DatabaseOwner, Helper
 from vantage6.common import info
 
-from mpc import setup
-
+from .mpc import setup
+from .utils import obtain_algorithm_adresses
 
 runtime = None
 secint = Runtime.SecInt()
@@ -28,26 +29,51 @@ secnum = Runtime.SecFxp(l=64, f=32)
 # party 1: bob
 # party 2: henri
 
-# TODO: ip and port retrieval from the server
-# TODO: secure matching part
-# TODO: determine the columns that are being used by the experiment
+# parties and ports will be overwritten by the RPC method. For testing
+# these values are used
 ports = [8000, 8001, 8002]
+ips = ['localhost', 'localhost', 'localhost']
 parties = [f'localhost:{p}' for p in ports]
 players = ['alice', 'bob', 'henri']
 
-def run_secure_matching(data: pandas.DataFrame, idx: int):
+def RPC_vertical_logistic_regression(data: pandas.DataFrame, metadata: dict,
+                                     idx: int):
+
+    addresses = obtain_algorithm_adresses()
+    info(f'Adresses ready: {addresses}')
+
+    # the order in which the input from the tasks is posted is essential
+    # in otder to make this work. Thus alice needs to be first, then bob
+    # an finaly the helper
+    global parties
+    parties = [f'{a["ip"]}:{a["port"]}' for a in addresses]
+    parties[idx] = 'localhost:8888'
+    global ports
+    ports = [_['port'] for _ in addresses]
+    global ips
+    ips = [_['ip'] for _ in addresses]
+    info(f'mpc parties {parties}')
+    # create runtime
+    create_runtime(parties, idx)
+    info(runtime.parties)
+    info(f'my id:{idx}')
+    # exit(1)
+
+    # the global parties is passed arround
+    return run(data, idx, metadata)
+
+
+def run(data: pandas.DataFrame, idx: int, metadata: dict):
 
     print('=> start runtime')
     runtime.run(runtime.start())
     print('=> Run Matching')
-    res = runtime.run(generate_instance(data, idx))
+    res = runtime.run(generate_instance(data, idx, metadata))
 
     info("=> Run model fitting")
-    print(res)
-    print(type(res))
     res = numpy.transpose(res)
     y = res[-1]
-    x_mat = res[0:-2]
+    x_mat = numpy.transpose(res[0:-2])
     res = runtime.run(compute_weigths(x_mat=x_mat, y=y))
 
     print('=> shutdown')
@@ -55,73 +81,11 @@ def run_secure_matching(data: pandas.DataFrame, idx: int):
 
     return res
 
-
-def run_logistic_regression(data):
-
-    y = data[-1]
-    x_mat = data[0:-2]
-
-    runtime.run(runtime.start())
-    res = runtime.run(compute_weigths(x_mat=x_mat, y=y))
-    runtime.run(runtime.shutdown())
-    return res
-
-def RPC_logistic_regression(data: pandas.DataFrame, columns: List[str],
-                            my_idx: int=0, x: bool=True) -> List[float]:
-
-    # TODO: retrieve these from the server
-    # global parties
-    my_addr = parties[my_idx]
-
-    info(f"Addresses: {parties}")
-    info(f"My address: {my_addr}")
-
-    create_runtime(parties, my_idx)
-
-    # select columns, preprocess and convert to secnum
-    sel = data[columns].values.transpose().tolist()
-    if x:
-        pre = {'x': [[secnum(x, integral=False) for x in row] for row in sel]}
-    else:
-        enc = [-1 if x==0 else 1 for x in sel[0]]
-        pre = {'y': [secnum(y, integral=False) for y in enc]}
-
-    # do the MPC analysis
-    info(f'Runtime parties: {runtime.parties}')
-    runtime.run(runtime.start())
-    res = runtime.run(compute_weigths(**pre))
-    runtime.run(runtime.shutdown())
-    return res
-
-
-def create_runtime(parties, idx):
-    # create our mpc runtime object
-    global runtime
-    runtime = setup(parties, idx)
-
-    # patch tno mpc modules with the mpc object
-    monkey_patch()
-
-
 async def compute_weigths(x_mat=[[]], y=[]):
 
     assert runtime, "Runtime is missing..."
 
-    # # TODO: arent these lengths always the same?
-    # info('Computing max length')
-    # n = await compute_max_length(x[0])
-    # m = await compute_max_length(y)
-    # info(f'n: {n}, m: {m}')
-
-    # info('Prepare input')
-    # if not x[0]:
-    #     x = [[secnum(None)] * n]
-    # if not y:
-    #     y = [secnum(None)] * m
-
-    # info('Share shares')
-    # x_mat = numpy.transpose([runtime.input(xi, senders=1) for xi in x][0])
-    # y_vec = runtime.input(y, senders=0)
+    info(f'==> parties: {runtime.parties}')
 
     # initialize logit model
     model = Logistic(solver_type=SolverTypes.GD,
@@ -129,11 +93,10 @@ async def compute_weigths(x_mat=[[]], y=[]):
                      penalty=PenaltyTypes.L1,
                      alpha=0.1)
 
-    info('Compute weigths')
-    weights = await model.compute_weights_mpc(numpy.transpose(x_mat), y, tolerance=1e-4)
-    info(f'Weights: {weights}')
+    info('==> Compute weigths')
+    weights = await model.compute_weights_mpc(x_mat, y, tolerance=1e-4)
 
-
+    info(f'==> Weights: {weights}')
     return weights
 
 
@@ -178,6 +141,7 @@ async def convert_additive_to_shamir(
 
 
 async def secure_join(player_instance):
+    info('==> secure join')
     await player_instance.run_protocol()
     if player_instance.identifier in player_instance.data_parties:
         print("Gathered shares:")
@@ -199,25 +163,31 @@ async def secure_join(player_instance):
     X_reveal = [await runtime.output(_.tolist()) for _ in X]
     print("Revealed inner join")
     print(X_reveal)
+    print(numpy.transpose(X_reveal))
+    print('y:', numpy.transpose(X_reveal)[-1])
 
     # contains all features + y
     return X
 
 
-async def generate_instance(df, idx):
+async def generate_instance(df, idx, metadata):
 
     port = ports[idx]
     print("port: ", port, "idx: ", idx)
     player = players[idx]
 
     pool = Pool()
-    pool.add_http_server(port=ports[idx])
+    pool.add_http_server(port=8888)
+    pool.http_server.external_port = ports[idx]
 
     for i, p in enumerate(ports):
         if i == idx:
             continue
         print(f'adding: {players[i]}')
-        pool.add_http_client(players[i], '127.0.0.1', port=p)
+
+        pool
+
+        pool.add_http_client(players[i], ips[i], port=p)
 
     # for name, party in parties.items():
     #     assert "address" in party
@@ -231,28 +201,27 @@ async def generate_instance(df, idx):
             pool=pool,
         )
     else:
-        if idx == 0:
-            # df = pandas.read_csv("data/dataset_A_500_5_.csv")
-            columns = ('mediastinoscopie', 'expl_chir')
-        elif idx == 1:
-            # df = pandas.read_csv("data/dataset_B_500_5_.csv")
-            columns = ('age', 'gender', 'os_36')
-
+        columns = metadata[idx]["x"]
+        if metadata[idx]["y"]:
+            columns.append(metadata[idx]["y"])
+        columns = tuple(columns)
+        print(columns)
+        # if idx == 0:
+        #     # df = pandas.read_csv("data/dataset_A_500_5_.csv")
+        #     columns = ('mediastinoscopie', 'expl_chir')
+        # elif idx == 1:
+        #     # df = pandas.read_csv("data/dataset_B_500_5_.csv")
+        #     columns = ('age', 'gender', 'os_36')
+        matching = metadata["matching"]
         player_instance = DatabaseOwner(
             identifier=player,
-            identifiers=df[
-                [
-                    "Sex",
-                    "Date-of-birth",
-                    "Postcode"
-                ]
-            ].to_numpy(dtype="object"),
-            identifiers_phonetic=df[["Name"]].to_numpy(
+            identifiers=df[matching["identifiers"]].to_numpy(dtype="object"),
+            identifiers_phonetic=df[[*matching["identifiers_phonetic"]]].to_numpy(
                 dtype="object"
             ),
-            identifiers_phonetic_exact=df[["Sex"]].to_numpy(dtype="object"),
-            identifier_date=df[["Date-of-birth"]].to_numpy(dtype="object"),
-            identifier_zip6=df[["Postcode"]].to_numpy(dtype="object"),
+            identifiers_phonetic_exact=df[[*matching["identifiers_phonetic_exact"]]].to_numpy(dtype="object"),
+            identifier_date=df[[*matching["identifier_date"]]].to_numpy(dtype="object"),
+            identifier_zip6=df[[*matching["identifier_zip6"]]].to_numpy(dtype="object"),
             # data=df.to_numpy(dtype="object")[:, -1, None],
             # feature_names=(df.columns[-1],),
             data=df[[*columns]].to_numpy(dtype="object"), # only ints or floats
@@ -260,9 +229,18 @@ async def generate_instance(df, idx):
             pool=pool,
         )
 
-
     res = await secure_join(player_instance)
     return res
+
+
+def create_runtime(parties, idx):
+    # create our mpc runtime object
+
+    global runtime
+    runtime = setup(parties, idx)
+
+    # patch tno mpc modules with the mpc object
+    monkey_patch()
 
 
 def monkey_patch():
@@ -312,6 +290,28 @@ if __name__ == '__main__':
         './local/x2.csv'
     ][idx]
 
+    metadata = {
+        0: {
+            "x": ["mediastinoscopie", "expl_chir"],
+            "y": None
+        },
+        1: {
+            "x": ["age", "gender"],
+            "y": "os_36"
+        },
+        "matching": {
+            "identifiers": [
+                "Sex",
+                "Date-of-birth",
+                "Postcode"
+            ],
+            "identifiers_phonetic": ["Name"],
+            "identifiers_phonetic_exact": ["Sex"],
+            "identifier_date": ["Date-of-birth"],
+            "identifier_zip6": ["Postcode"]
+        }
+    }
+
     columns = [['y', 'weight', 'cm'][idx]]
     data = pandas.read_csv(data_file)
 
@@ -319,7 +319,6 @@ if __name__ == '__main__':
     if idx == 1:
         data['os_36'] = [-1 if x==0 else 1 for x in data['os_36']]
 
-    # res = RPC_logistic_regression(data, columns, idx, idx!=0)
-    res = run_secure_matching(data, idx)
-    # res = run_logistic_regression(data, idx)
+    res = run(data, idx, metadata)
+
     print(res)

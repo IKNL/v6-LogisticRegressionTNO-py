@@ -3,7 +3,17 @@ FROM harbor2.vantage6.ai/algorithms/algorithm-base
 
 # This is a placeholder that should be overloaded by invoking
 # docker build with '--build-arg PKG_NAME=...'
-ARG PKG_NAME="v6-boilerplate-py"
+ARG PKG_NAME="v6-logistic-regression-py"
+
+RUN pip install mpyc==0.7
+RUN python -m pip install 'tno.mpc.mpyc.secure_learning[gmpy]'
+COPY tno.mpc.protocols.secure_inner_join-dev-py3-none-any.whl .
+RUN pip install tno.mpc.protocols.secure_inner_join-dev-py3-none-any.whl
+
+
+RUN apt update
+RUN apt install iperf3 -y
+RUN apt install iputils-ping -y
 
 # install federated algorithm
 COPY . /app
@@ -15,9 +25,10 @@ RUN pip install /app
 # If no ports are specified (and VPN is available), only port 8888 is available
 # by default
 EXPOSE 8888
-LABEL p8888 = 'message_queue'
-EXPOSE 9999
-LABEL p9999 = 'other_label'
+LABEL p8888 'mpc_runtime'
+
+# EXPOSE 8080
+# LABEL p8080 'tno_com'
 
 ENV PKG_NAME=${PKG_NAME}
 
